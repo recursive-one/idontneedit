@@ -1,0 +1,233 @@
+- hosts: web
+  become: yes
+
+  vars:
+    dest: /srv/idontneedit/app
+    venv: /srv/idontneedit/venv
+    ssh_port: 22
+
+  vars_files:
+    - secrets.yml
+
+  tasks:
+
+    - name: ensure deploy user exists
+      ansible.builtin.user:
+        name: deploy
+        state: present
+        shell: /bin/bash
+        groups: www-data
+        append: yes
+
+    - name: set hostname
+      ansible.builtin.hostname:
+        name: idontneedit
+
+    - name: update hosts file
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '127\.0\.1\.1\s+.*'
+        line: "127.0.0.1 localhost idontneedit"
+
+    - name: check core packages
+      ansible.builtin.package:
+        name:
+          - unattended-upgrades
+          - apt-transport-https
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: yes
+
+    - name: enable unattended-upgrades
+      ansible.builtin.command: dpkg-reconfigure -f noninteractive unattended-upgrades
+
+    - name: ensure ufw is installed
+      ansible.builtin.package:
+        name: ufw
+        state: present
+        update_cache: yes
+
+    - name: reset ufw to default
+      ansible.builtin.ufw:
+        state: reset
+
+    - name: allow ssh
+      ufw:
+        rule: allow
+        port: "{{ ssh_port }}"
+        proto: tcp
+
+    - name: allow http
+      ufw:
+        rule: allow
+        port: 80
+        proto: tcp
+
+    - name: allow https
+      ufw:
+        rule: allow
+        port: 443
+        proto: tcp
+
+    - name: enable ufw
+      ansible.builtin.ufw:
+        state: enabled
+
+    - name: disable password authentication for SSH
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+        state: present
+
+    - name: ensure SSH key auth only
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PubkeyAuthentication'
+        line: 'PubkeyAuthentication yes'
+        state: present
+
+    - name: reload ssh
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded
+
+    - name: install fail2ban
+      ansible.builtin.package:
+        name: fail2ban
+        state: present
+        update_cache: yes
+
+    - name: install systemd unit
+      copy:
+        src: idontneedit.service
+        dest: /etc/systemd/system/idontneedit.service
+        owner: root
+        group: root
+        mode: 644
+
+    - name: upload env file
+      ansible.builtin.template:
+        src: env.j2
+        dest: /srv/idontneedit/env
+        owner: deploy
+        group: deploy
+        mode: "0600"
+      become: yes
+
+    - name: reload systemd
+      command: systemctl daemon-reload
+
+    - name: enable service
+      systemd:
+        name: idontneedit
+        enabled: yes
+
+    - name: ensure dirs
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: deploy
+        group: www-data
+        mode: '0755'
+      loop:
+        - /srv/idontneedit/static
+        - /srv/idontneedit/media
+        - /srv/idontneedit/logs
+        - /srv/idontneedit/venv
+        - /srv/idontneedit/app
+        - /srv/idontneedit/run
+
+    - name: copy application files
+      ansible.posix.synchronize:
+        src: "{{ playbook_dir }}/../"
+        dest: "{{ dest }}"
+        delete: yes
+        owner: no
+        group: no
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=__pycache__"
+          - "--exclude=*.pyc"
+          - "--exclude=.env"
+          - "--exclude=db.sqlite3"
+          - "--exclude=venv"
+          - "--exclude=.venv"
+          - "--exclude=ansible/"
+          - "--chown=deploy:www-data"
+        rsync_path: "rsync"
+
+    - name: ensure database file exists with correct permissions
+      ansible.builtin.file:
+        path: "{{ dest }}/db.sqlite3"
+        owner: deploy
+        group: www-data
+        mode: '0644'
+        state: touch
+        modification_time: preserve
+        access_time: preserve
+
+    - name: ensure python3-venv is installed
+      ansible.builtin.package:
+        name:
+          - python3
+          - python3-venv
+        state: present
+        update_cache: yes
+
+    - name: create venv
+      ansible.builtin.command: python3 -m venv "{{ venv }}"
+      args:
+        creates: "{{ venv }}/bin/activate"
+      become_user: deploy
+
+    - name: install dependencies
+      become_user: deploy
+      ansible.builtin.command: "{{ venv }}/bin/pip install -r requirements.txt"
+      args:
+        chdir: "{{ dest }}"
+
+    - name: run migrations
+      ansible.builtin.command: "{{ venv }}/bin/python manage.py migrate --noinput"
+      args:
+        chdir: "{{ dest }}"
+      become_user: deploy
+
+    - name: collect static
+      become_user: deploy
+      ansible.builtin.command: "{{ venv }}/bin/python manage.py collectstatic --noinput"
+      args:
+        chdir: "{{ dest }}"
+
+    - name: restart service
+      ansible.builtin.systemd:
+        name: idontneedit
+        state: restarted
+
+    - name: install Caddy
+      apt:
+        name: caddy
+        state: present
+        update_cache: yes
+
+    - name: install Caddyfile
+      copy:
+        src: Caddyfile
+        dest: /etc/caddy/Caddyfile
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+
+    - name: enable and start caddy
+      ansible.builtin.systemd:
+        name: caddy
+        enabled: yes
+        state: restarted
+
+    - name: Run deployment checks
+      ansible.builtin.command: "{{ venv }}/bin/python manage.py check --deploy --fail-level=WARNING"
+      args:
+        chdir: "{{ dest }}"
+      become_user: deploy

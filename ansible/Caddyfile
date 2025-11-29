@@ -1,0 +1,15 @@
+idontneedit.org.ru {
+
+
+    handle_path /static/* {
+        root * /srv/idontneedit/static
+        file_server
+    }
+
+    handle_path /media/* {
+        root * /srv/idontneedit/media
+        file_server
+    }
+
+    reverse_proxy unix//srv/idontneedit/run/gunicorn.sock
+}

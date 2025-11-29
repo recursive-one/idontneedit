@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        run: pip install uv
+
+
+      - name: Install project
+        run: uv sync
+
+      - name: run pre-commit checks
+        run: uv run pre-commit run --all-files
+
+      - name: Run django checks
+        run: uv run python manage.py check
+
+      - name: Run tests
+        run: uv run python manage.py test
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: set up ssh key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_KEY }}
+
+      - name: add server to known hosts
+        run: ssh-keyscan -H 146.103.114.73 >> ~/.ssh/known_hosts
+
+      - name: install ansible
+        run: pip install ansible
+
+      - name: Create vault password file
+        run: echo "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > ansible/vault_password.txt
+
+      - name: run deploy
+        run: ansible-playbook -i ansible/inventory.ini ansible/deploy.yml --vault-password-file ansible/vault_password.txt
