@@ -1,0 +1,11 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: idontneedit:dev
+    volumes:
+      - .:/app
+      - static-data:/app/static
+    environment:
+      DJANGO_DEBUG: "true"

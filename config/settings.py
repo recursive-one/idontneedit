@@ -11,20 +11,25 @@ https://docs.djangoproject.com/en/dev/ref/settings/
 """
 
 from pathlib import Path
-import os
+import environ
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Initialize environ
+env = environ.Env(DJANGO_DEBUG=(bool, False))
+
+# Read .env file if it exists
+environ.Env.read_env(BASE_DIR / ".env")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/dev/howto/deployment/checklist/
 
-SECRET_KEY = os.getenv(
-    "DJANGO_SECRET_KEY", "django-insecure-please-change-me-in-production"
+SECRET_KEY = env(
+    "DJANGO_SECRET_KEY", default="django-insecure-please-change-me-in-production"
 )
 
-DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in {"1", "true", "yes"}
+DEBUG = env.bool("DJANGO_DEBUG", default=False)
 
 ALLOWED_HOSTS = [
     "idontneedit.org.ru",
@@ -78,12 +83,26 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/dev/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+if DEBUG:
+    # Use SQLite for development
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    # Use Postgres for production
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("POSTGRES_DB", default="idontneedit"),
+            "USER": env("POSTGRES_USER", default="idontneedit"),
+            "PASSWORD": env("POSTGRES_PASSWORD"),
+            "HOST": env("POSTGRES_HOST", default="postgres"),
+            "PORT": env("POSTGRES_PORT", default="5432"),
+        }
+    }
 
 
 # Password validation
@@ -122,7 +141,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
-STATIC_ROOT = os.getenv("DJANGO_STATIC_ROOT", "/srv/idontneedit/static/")
+STATIC_ROOT = env("DJANGO_STATIC_ROOT", default="/app/static/")
 
 CSRF_TRUSTED_ORIGINS = ["https://idontneedit.org.ru"]
 
