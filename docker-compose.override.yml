@@ -7,3 +7,5 @@ services:
     volumes:
       - .:/app
       - static-data:/app/static
+      - /app/.venv
+      - /app/__pycache__
