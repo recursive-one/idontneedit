@@ -134,16 +134,6 @@
         mode: "0600"
       become: yes
 
-    - name: ensure database file exists with permissive permissions (for container write)
-      ansible.builtin.file:
-        path: "{{ dest }}/db.sqlite3"
-        owner: deploy
-        group: www-data
-        mode: '0666'
-        state: touch
-        modification_time: preserve
-        access_time: preserve
-
     - name: ensure prerequisites for Docker repo
       ansible.builtin.package:
         name:
