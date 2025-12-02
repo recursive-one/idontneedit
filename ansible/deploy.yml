@@ -206,3 +206,16 @@
       args:
         chdir: "{{ dest }}"
       become_user: deploy
+
+    - name: create superuser if it does not exist
+      ansible.builtin.command: docker compose exec -T app python manage.py createsuperuser --noinput
+      args:
+        chdir: "{{ dest }}"
+      become_user: deploy
+      environment:
+        DJANGO_SUPERUSER_USERNAME: "{{ django_superuser_username | default('admin') }}"
+        DJANGO_SUPERUSER_EMAIL: "{{ django_superuser_email | default('admin@example.com') }}"
+        DJANGO_SUPERUSER_PASSWORD: "{{ django_superuser_password | default('admin') }}"
+      register: superuser_result
+      failed_when: superuser_result.rc != 0 and 'already exists' not in superuser_result.stderr
+      changed_when: superuser_result.rc == 0
