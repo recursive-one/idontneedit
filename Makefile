@@ -4,6 +4,10 @@ MNG:=uv run python manage.py
 server: .env
 	@$(MNG) runserver
 
+.PHONY: shell
+shell:
+	@$(MNG) shell_plus --ipython -- --profile=""
+
 .PHONY: db
 db:
 	@$(MNG) migrate
